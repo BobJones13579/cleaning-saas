@@ -1,0 +1,101 @@
+# Manual QA Checklist – SMS Reminder System
+
+This document covers manual tests for verifying reminder functionality, job state updates, and message logging integrity across the system.
+
+---
+
+## ✅ 1. Job Creation & Day-Before Reminder
+
+- [ ] Create a job scheduled for tomorrow
+- [ ] Wait for `send-daybefore-reminders` to run (or trigger manually)
+- [ ] Confirm:
+  - [ ] SMS is received
+  - [ ] Message time is correct (in Eastern Time)
+  - [ ] `day_before_reminder_sent` is `true` in the `jobs` table
+  - [ ] A log exists in the `messages` table with:
+    - [ ] Correct `client_id`, `owner_id`
+    - [ ] Accurate `sent_at`
+    - [ ] Message body is correct and human-readable
+
+---
+
+## ✅ 2. Day-Of Reminder
+
+- [ ] Create a job scheduled for today
+- [ ] Run `send-today-reminders` manually
+- [ ] Confirm:
+  - [ ] SMS is received
+  - [ ] Time in message matches local time (Eastern)
+  - [ ] `day_of_reminder_sent` is `true` in job row
+  - [ ] Message is logged in `messages` table
+  - [ ] Re-running the function does not resend SMS
+
+---
+
+## ✅ 3. “On My Way” Button
+
+- [ ] Go to job in dashboard
+- [ ] Click “Send On My Way” button
+- [ ] Confirm:
+  - [ ] SMS is sent to client
+  - [ ] Button becomes disabled
+  - [ ] `on_my_way_time` is set in job row
+  - [ ] `on_my_way_sent` is `true`
+  - [ ] A log is created in `messages`
+  - [ ] Clicking again does not send another message
+
+---
+
+## ✅ 4. Job Completion → Feedback SMS
+
+- [ ] Mark a job as completed
+- [ ] Confirm:
+  - [ ] Feedback SMS is sent
+  - [ ] `feedback_sent` becomes `true`
+  - [ ] `feedback_sent_at` is timestamped
+  - [ ] Log exists in `messages`
+  - [ ] Badge appears in UI
+  - [ ] Retrying feedback send does not send again
+
+---
+
+## ✅ 5. Edge Cases & Failures
+
+### ⬜ Missing Client Phone
+
+- [ ] Create a job with a client who has no phone number
+- [ ] Run reminders
+- [ ] Confirm:
+  - [ ] Job is skipped
+  - [ ] Log clearly states reason (e.g. “Missing phone”)
+  - [ ] No crash or error in UI/backend
+
+### ⬜ Past Job
+
+- [ ] Create a job scheduled in the past
+- [ ] Run reminder functions
+- [ ] Confirm:
+  - [ ] Job is skipped
+  - [ ] Logs indicate reason (e.g. “Job is in the past”)
+  - [ ] No SMS is sent
+
+---
+
+## ✅ 6. Message Logging
+
+For every SMS type (reminder, on-my-way, feedback):
+
+- [ ] One entry is created in `messages` table
+- [ ] Includes:
+  - [ ] `direction: outbound`
+  - [ ] Correct `client_id` and `owner_id`
+  - [ ] Accurate `sent_at`
+  - [ ] Message body is correct and human-readable
+
+---
+
+## ✅ 7. Time Format Validation
+
+- [ ] All times shown in SMS are correct (Eastern Time or owner time zone)
+- [ ] Format is readable (e.g. `10:00 AM ET`, not ISO or Zulu time)
+- [ ] No mismatch between dashboard time and SMS time

@@ -50,7 +50,7 @@ export default function DashboardPage() {
       // Fetch jobs and join client and cleaner names using correct join syntax
       const { data, error } = await supabase
         .from("jobs")
-        .select(`id, scheduled_start, status, notes, client_id, cleaner_id, clients:client_id(name), cleaners:cleaner_id(name)`)
+        .select(`id, scheduled_start, status, notes, client_id, cleaner_id, feedback_sent, feedback_sent_at, on_my_way_sent, on_my_way_time, clients:client_id(name), cleaners:cleaner_id(name)`)
         .order("scheduled_start", { ascending: true });
       console.log('[Dashboard] Raw jobs from Supabase:', data);
       if (error) {
@@ -67,6 +67,10 @@ export default function DashboardPage() {
           notes: job.notes,
           client_id: job.client_id,
           cleaner_id: job.cleaner_id,
+          feedback_sent: job.feedback_sent,
+          feedback_sent_at: job.feedback_sent_at,
+          on_my_way_sent: job.on_my_way_sent,
+          on_my_way_time: job.on_my_way_time,
         }));
         console.log('[Dashboard] Transformed jobs:', transformed);
         setJobs(transformed);

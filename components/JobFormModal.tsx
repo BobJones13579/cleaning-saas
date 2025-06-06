@@ -6,7 +6,8 @@ import { JOB_STATUS_OPTIONS } from "../lib/constants";
 import { supabase } from "../lib/supabase";
 import { Plus } from "lucide-react";
 import { v4 as uuidv4, validate as validateUUID } from "uuid";
-import { convertLocalToUTC, convertUTCToLocal, BUSINESS_TIMEZONE } from "../lib/utils";
+import { DateTime } from "luxon";
+import { convertUTCToLocal, BUSINESS_TIMEZONE } from "../lib/utils";
 
 export type JobFormModalJob = {
   id: string;
@@ -108,6 +109,10 @@ export default function JobFormModal({
 
   const bookedCleanerIds: string[] = cleanersLoading || !datetime ? [] : jobsAtDatetime(cleaners, datetime);
 
+  // Add this after datetime state
+  const nowEastern = DateTime.now().setZone(BUSINESS_TIMEZONE);
+  const isPast = datetime && DateTime.fromISO(datetime, { zone: BUSINESS_TIMEZONE }) < nowEastern;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!clientId || !cleanerId || !datetime) {
@@ -124,8 +129,9 @@ export default function JobFormModal({
     setLoading(true);
     setError(null);
     try {
-      // Convert local (business time zone) input to UTC for DB
-      const utcDatetime = convertLocalToUTC(datetime);
+      // Convert local (business time zone) input to UTC for DB using Luxon
+      // User enters datetime in BUSINESS_TIMEZONE (e.g. '2025-02-02T15:30'), so convert to UTC ISO string
+      const utcDatetime = DateTime.fromISO(datetime, { zone: BUSINESS_TIMEZONE }).toUTC().toISO();
       // Check for cleaner conflict (same cleaner, same time)
       let query = supabase
         .from("jobs")
@@ -159,12 +165,11 @@ export default function JobFormModal({
       const jobData = {
         client_id: clientId || null,
         cleaner_id: cleanerId || null,
-        scheduled_start: utcDatetime, // Save as UTC
+        scheduled_start: utcDatetime, // Always save as UTC ISO string
         notes: notes || null,
         status: mapStatusToDb(status),
         owner_id: user.id,
       };
-      console.log("jobData being sent:", jobData); // Debug log
       const saveError = await saveJob(jobData, job?.id);
       if (saveError) {
         setError(saveError);
@@ -273,6 +278,12 @@ export default function JobFormModal({
                     required
                     disabled={loading}
                   />
+                  {isPast && (
+                    <div className="text-yellow-600 text-xs mt-1 flex items-center gap-1">
+                      <span role="img" aria-label="Warning">⚠️</span>
+                      This job is scheduled in the past. Reminders will not be sent automatically.
+                    </div>
+                  )}
                   {error && !datetime && <div className="text-red-500 text-xs mt-1">Date & Time is required.</div>}
                 </div>
                 <div>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { isValidPhone } from "../lib/utils";
 
 export type Client = {
