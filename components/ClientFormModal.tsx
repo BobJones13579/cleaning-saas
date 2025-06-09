@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { isValidPhone } from "../lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Textarea } from "./ui/textarea";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Loader2 } from "lucide-react";
 
 export type Client = {
   id?: string;
@@ -8,6 +14,7 @@ export type Client = {
   phone: string;
   email?: string;
   address?: string;
+  notes?: string;
   created_by_user_id?: string;
 };
 
@@ -31,6 +38,7 @@ function normalizePhone(input: string): string {
 }
 
 export default function ClientFormModal({ client, onClose, onSave }: Props) {
+  const [open, setOpen] = useState(true);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -101,6 +109,7 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
         if (insertError) throw insertError;
       }
       if (onSave) onSave();
+      setOpen(false);
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to save client.");
@@ -109,19 +118,26 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
     }
   }
 
+  function handleDialogClose() {
+    setOpen(false);
+    onClose();
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 px-1 sm:px-2">
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 w-full max-w-xs sm:max-w-md p-4 sm:p-8 relative mx-auto">
-        <h2 className="text-lg sm:text-xl font-extrabold tracking-tight mb-4 sm:mb-6 text-gray-900">
-          {client ? "Edit Client" : "Add Client"}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
-          <div className="space-y-3">
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="client-name">Full Name<span className="text-red-500">*</span></label>
-              <input
+    <Dialog open={open} onOpenChange={isOpen => { if (!isOpen) handleDialogClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-2xl font-bold text-gray-900">{client ? "Edit Client" : "Add Client"}</DialogTitle>
+          <DialogDescription className="text-base text-gray-600">
+            {client ? "Update the client details below." : "Fill in the details to add a new client."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-6 py-2">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="client-name" className="text-base font-semibold text-gray-800">Full Name <span className="text-destructive">*</span></Label>
+              <Input
                 id="client-name"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 required
@@ -129,13 +145,11 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
                 placeholder="Jane Doe"
                 autoComplete="name"
               />
-              {error && !name.trim() && <div className="text-red-500 text-xs mt-1">Name is required.</div>}
             </div>
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="client-phone">Phone<span className="text-red-500">*</span></label>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="client-phone" className="text-base font-semibold text-gray-800">Phone <span className="text-destructive">*</span></Label>
+              <Input
                 id="client-phone"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 placeholder="(555) 555-5555 or +1 555-555-5555"
@@ -145,13 +159,11 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
                 disabled={isLoading}
                 autoComplete="tel"
               />
-              {error && (digits.length < 7 || /[a-zA-Z]/.test(phone)) && <div className="text-red-500 text-xs mt-1">Please enter a valid phone number.</div>}
             </div>
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="client-email">Email</label>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="client-email" className="text-base font-semibold text-gray-800">Email</Label>
+              <Input
                 id="client-email"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 type="email"
@@ -160,11 +172,10 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
                 autoComplete="email"
               />
             </div>
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="client-address">Address</label>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="client-address" className="text-base font-semibold text-gray-800">Address</Label>
+              <Input
                 id="client-address"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={address}
                 onChange={e => setAddress(e.target.value)}
                 placeholder="123 Main St, City, State"
@@ -173,28 +184,38 @@ export default function ClientFormModal({ client, onClose, onSave }: Props) {
               />
             </div>
           </div>
-          {error && !error.includes('Name') && !error.includes('phone') && (
-            <div className="text-red-500 text-xs mt-1">{error}</div>
+          {error && (
+            <Alert variant="destructive" className="py-2">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-          <div className="flex justify-end gap-2 mt-4">
-            <button
+          <DialogFooter className="pt-2">
+            <Button
               type="button"
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 focus:bg-gray-200 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-200"
-              onClick={onClose}
+              variant="outline"
+              onClick={handleDialogClose}
               disabled={isLoading}
+              className="text-base px-5 py-2"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 focus:bg-blue-800 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
               disabled={isLoading || !name.trim() || !phone.trim()}
+              className="bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 text-white text-base font-semibold px-5 py-2 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
             >
-              {isLoading ? "Saving..." : "Save"}
-            </button>
-          </div>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 } 

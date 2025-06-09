@@ -1,17 +1,17 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Search, Send, Loader2 } from "lucide-react";
 
 interface Message {
   id: string;
   client_id: string | null;
   body: string;
-  direction: "inbound" | "outbound";
+  direction: "inbound" | "outbound" | "system";
   phone: string;
   sent_at?: string;
   client_name?: string | null;
@@ -111,6 +111,43 @@ export default function MessagesPage() {
       )
     : null;
 
+  // Enhanced: Group messages by sender and time (5+ min gap)
+  function groupMessagesBySenderAndTime(msgs: Message[]) {
+    if (!msgs || msgs.length === 0) return [];
+    const groups: {
+      sender: 'inbound' | 'outbound' | 'system',
+      messages: Message[],
+      timestamp: string
+    }[] = [];
+    let currentGroup = {
+      sender: msgs[0].direction,
+      messages: [msgs[0]],
+      timestamp: msgs[0].sent_at || ""
+    };
+    for (let i = 1; i < msgs.length; i++) {
+      const msg = msgs[i];
+      const prevMsg = msgs[i - 1];
+      const senderChanged = msg.direction !== currentGroup.sender;
+      const timeGap = prevMsg.sent_at && msg.sent_at
+        ? (new Date(msg.sent_at).getTime() - new Date(prevMsg.sent_at).getTime()) / 1000 / 60
+        : 0;
+      if (senderChanged || timeGap > 5) {
+        groups.push(currentGroup);
+        currentGroup = {
+          sender: msg.direction,
+          messages: [msg],
+          timestamp: msg.sent_at || ""
+        };
+      } else {
+        currentGroup.messages.push(msg);
+      }
+    }
+    groups.push(currentGroup);
+    return groups;
+  }
+
+  const groupedConversation = conversation ? groupMessagesBySenderAndTime(conversation) : [];
+
   // Count unread inbound messages per thread
   function getUnreadCount(threadMsgs: Message[]) {
     return threadMsgs.filter((msg) => msg.direction === "inbound" && msg.is_read === false).length;
@@ -142,6 +179,76 @@ export default function MessagesPage() {
     fetchMessages();
   }, []);
 
+  useEffect(() => {
+    // Subscribe to real-time changes in the messages table
+    const channel = supabase
+      .channel('messages-realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+      }, async (payload) => {
+        if (payload.eventType === 'INSERT') {
+          // Fetch client name if client_id exists and not already in state
+          let client_name = null;
+          if (payload.new.client_id) {
+            // Try to find in current messages
+            const existing = messages.find(m => m.client_id === payload.new.client_id && m.client_name);
+            if (existing) {
+              client_name = existing.client_name;
+            } else {
+              // Fetch from Supabase
+              const { data } = await supabase
+                .from('clients')
+                .select('name')
+                .eq('id', payload.new.client_id)
+                .single();
+              client_name = data?.name || null;
+            }
+          }
+          // Ensure all Message fields are present
+          const newMsg: Message = {
+            id: payload.new.id,
+            client_id: payload.new.client_id ?? null,
+            body: payload.new.body ?? '',
+            direction: payload.new.direction,
+            phone: payload.new.phone ?? '',
+            sent_at: payload.new.sent_at,
+            client_name,
+            is_read: payload.new.is_read ?? false,
+          };
+
+          setMessages(prev => {
+            // Remove optimistic message if present
+            const optimisticIdx = prev.findIndex(m =>
+              typeof m.id === 'string' && m.id.startsWith('temp-') &&
+              m.body === newMsg.body &&
+              m.phone === newMsg.phone &&
+              m.direction === newMsg.direction
+            );
+            if (optimisticIdx !== -1) {
+              const updated = [...prev];
+              updated[optimisticIdx] = newMsg;
+              return updated;
+            }
+            // Otherwise, add if not already present
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+          });
+        }
+        if (payload.eventType === 'UPDATE') {
+          setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m));
+        }
+        if (payload.eventType === 'DELETE') {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   async function handleReply(threadKey: string, phone: string) {
     if (!reply[threadKey]?.trim()) return;
     setSending((s) => ({ ...s, [threadKey]: true }));
@@ -161,12 +268,12 @@ export default function MessagesPage() {
       const res = await fetch("/api/send-sms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: phone, message: newMsg.body }),
+        body: JSON.stringify({ to: phone, body: newMsg.body }),
       });
       const result = await res.json();
       if (result.success) {
         toast({ title: "Reply sent", description: "SMS sent to client." });
-        fetchMessages();
+        // No need to call fetchMessages here; real-time will update
       } else {
         toast({ title: "Failed to send", description: result.error || "Could not send SMS.", variant: "destructive" });
         // Remove optimistic message
@@ -190,8 +297,12 @@ export default function MessagesPage() {
             placeholder="Search by client, phone, or message..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="mb-3"
+            className="mb-3 pl-10"
+            aria-label="Search messages"
           />
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <Search className="h-5 w-5" />
+          </span>
           {loading ? (
             <div className="text-center text-gray-400 py-8">Loading messages...</div>
           ) : error ? (
@@ -206,8 +317,10 @@ export default function MessagesPage() {
                 return (
                   <li
                     key={threadKey}
-                    className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors duration-150 ${selectedThread === threadKey ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                    className={`relative flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors duration-150 ${selectedThread === threadKey ? "bg-blue-100 ring-2 ring-blue-300" : "hover:bg-gray-50 active:bg-blue-50"}`}
                     onClick={() => setSelectedThread(threadKey)}
+                    aria-label={`Open thread with ${msg.client_name || msg.phone}`}
+                    tabIndex={0}
                   >
                     <Avatar>
                       <AvatarFallback className="bg-blue-100 text-blue-700 font-bold">
@@ -220,7 +333,7 @@ export default function MessagesPage() {
                       <div className="font-semibold truncate text-gray-900 flex items-center gap-2">
                         {msg.client_name || <span className="text-gray-400">Unknown</span>}
                         {unreadCount > 0 && (
-                          <span className="ml-1 inline-block w-2 h-2 rounded-full bg-blue-500" title="Unread messages"></span>
+                          <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white" title="Unread messages">{unreadCount}</span>
                         )}
                       </div>
                       <div className="text-xs text-gray-400 truncate">{msg.phone}</div>
@@ -253,81 +366,154 @@ export default function MessagesPage() {
                 <button
                   className="ml-auto text-xs text-blue-600 hover:underline focus:outline-none"
                   onClick={() => setSelectedThread(null)}
+                  aria-label="Back to threads"
+                  tabIndex={0}
+                  title="Back to threads"
                 >
                   Back to threads
                 </button>
               </div>
-              <div className="flex flex-col gap-3 bg-white border rounded-xl shadow-md p-4 max-h-[60vh] overflow-y-auto">
-                {conversation.map((msg, idx) => {
-                  const isInbound = msg.direction === "inbound";
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex items-end gap-3 ${isInbound ? "flex-row" : "flex-row-reverse"}`}
-                    >
-                      <Avatar>
-                        <AvatarFallback className={isInbound ? "bg-blue-100 text-blue-700 font-bold" : "bg-green-100 text-green-700 font-bold"}>
-                          {isInbound
-                            ? (msg.client_name ? msg.client_name.split(" ").map((n) => n[0]).join("") : msg.phone.slice(-4))
-                            : "Y"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className={`flex flex-col max-w-[75%] ${isInbound ? "items-start" : "items-end"}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={isInbound ? "text-blue-700 font-semibold text-xs" : "text-green-700 font-semibold text-xs"}>
-                            {isInbound ? "Client" : "You"}
-                          </span>
-                          <span className="text-[11px] text-gray-400 font-medium">
-                            {msg.sent_at ? new Date(msg.sent_at).toLocaleString() : ""}
-                          </span>
-                        </div>
-                        <div
-                          className={`rounded-2xl px-4 py-2 text-base shadow-sm transition-colors duration-150 ${
-                            isInbound
-                              ? "bg-blue-50 text-gray-900 border border-blue-100"
-                              : "bg-green-50 text-gray-900 border border-green-100"
-                          }`}
-                        >
-                          {msg.body}
-                        </div>
-                      </div>
+              <div className="flex flex-col gap-3 bg-white border rounded-xl shadow-md p-4 max-h-[60vh] overflow-y-auto bg-blue-50/30">
+                {groupedConversation.map((group, groupIdx) => (
+                  <div key={groupIdx} className="w-full">
+                    {/* Timestamp above group */}
+                    <div className="w-full flex justify-center my-2">
+                      <span className="text-xs text-gray-400 text-center">
+                        {group.timestamp ? new Date(group.timestamp).toLocaleString() : ""}
+                      </span>
                     </div>
-                  );
-                })}
+                    <div className={`flex flex-col ${groupIdx > 0 ? 'mt-4' : ''}`}> {/* More space between groups */}
+                      {group.messages.map((msg, idx) => {
+                        const isInbound = msg.direction === "inbound";
+                        const isOutbound = msg.direction === "outbound";
+                        const isSystem = msg.direction === "system";
+                        const showAvatar = idx === 0 && !isSystem;
+                        const isFirst = idx === 0;
+                        const isLast = idx === group.messages.length - 1;
+                        const isSolo = group.messages.length === 1;
+                        // Bubble corner logic
+                        let bubbleClass = "";
+                        if (isSolo) {
+                          bubbleClass = "rounded-2xl";
+                        } else if (isFirst) {
+                          bubbleClass = isInbound
+                            ? "rounded-t-2xl rounded-br-2xl rounded-bl-2xl"
+                            : "rounded-t-2xl rounded-bl-2xl rounded-br-2xl";
+                        } else if (isLast) {
+                          bubbleClass = isInbound
+                            ? "rounded-b-2xl rounded-tr-2xl rounded-bl-2xl"
+                            : "rounded-b-2xl rounded-tl-2xl rounded-br-2xl";
+                        } else {
+                          bubbleClass = isInbound
+                            ? "rounded-bl-2xl rounded-br-2xl"
+                            : "rounded-bl-2xl rounded-br-2xl";
+                        }
+                        // Spacing
+                        const msgSpacing = idx === 0 ? '' : 'mt-1';
+                        // System/auto message styling
+                        if (isSystem) {
+                          return (
+                            <div key={msg.id} className="flex justify-center my-2">
+                              <span className="text-xs italic text-gray-400 bg-transparent px-2 py-1">
+                                {msg.body}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex items-end gap-3 transition-all duration-300 ease-in-out ${isInbound ? "flex-row" : "flex-row-reverse"} ${msgSpacing}`}
+                            style={{ opacity: 1, transform: 'translateY(0)' }}
+                          >
+                            {showAvatar ? (
+                              <Avatar>
+                                <AvatarFallback className={isInbound ? "bg-blue-100 text-blue-700 font-bold" : "bg-green-100 text-green-700 font-bold"}>
+                                  {isInbound
+                                    ? (msg.client_name ? msg.client_name.split(" ").map((n) => n[0]).join("") : msg.phone.slice(-4))
+                                    : "Y"}
+                                </AvatarFallback>
+                              </Avatar>
+                            ) : (
+                              <div className="w-10" />
+                            )}
+                            <div className={`flex flex-col max-w-[75%] ${isInbound ? "items-start" : "items-end"}`}>
+                              <div
+                                className={`px-4 py-2 text-base shadow-sm transition-colors duration-150 ${
+                                  isInbound
+                                    ? "bg-blue-50 text-gray-900 border border-blue-100"
+                                    : "bg-green-50 text-gray-900 border border-green-100"
+                                } animate-fade-in ${bubbleClass}`}
+                                style={{
+                                  marginTop: isFirst ? 0 : 4,
+                                  marginBottom: isLast ? 0 : 4,
+                                  minWidth: '2.5rem',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {msg.body}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
                 <div ref={conversationEndRef} />
               </div>
-              {/* Reply box for latest message in thread, only if last message is inbound */}
-              {(() => {
-                const lastMsg = conversation[conversation.length - 1];
-                if (lastMsg && lastMsg.direction === "inbound") {
-                  return (
-                    <form
-                      className="flex gap-2 mt-6"
-                      onSubmit={e => {
+              {/* Redesigned Reply bar: modern pill-style input with send icon inside */}
+              <form
+                className="w-full flex justify-center items-end pb-4"
+                onSubmit={e => {
+                  e.preventDefault();
+                  const lastMsg = conversation[conversation.length - 1];
+                  if (lastMsg && reply[selectedThread]?.trim()) handleReply(selectedThread, lastMsg.phone);
+                }}
+                aria-label="Reply to client"
+                autoComplete="off"
+              >
+                <div
+                  className="flex items-end w-full max-w-2xl bg-[#F1F1F1] border border-gray-200 shadow-sm rounded-full px-3 py-2 relative"
+                  style={{ minHeight: 48 }}
+                >
+                  <textarea
+                    rows={1}
+                    maxLength={1000}
+                    value={reply[selectedThread] || ""}
+                    onChange={e => setReply(r => ({ ...r, [selectedThread]: e.target.value }))}
+                    placeholder="Type a message..."
+                    className="flex-1 resize-none bg-transparent outline-none border-none text-base pl-3 pr-10 py-2 rounded-full focus:ring-0 focus:outline-none min-h-[32px] max-h-[96px]"
+                    style={{
+                      overflow: 'auto',
+                      minHeight: 32,
+                      maxHeight: 96,
+                    }}
+                    disabled={sending[selectedThread]}
+                    aria-label="Type your reply"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handleReply(selectedThread, lastMsg.phone);
-                      }}
-                    >
-                      <Input
-                        placeholder="Type reply..."
-                        value={reply[selectedThread] || ""}
-                        onChange={e => setReply(r => ({ ...r, [selectedThread]: e.target.value }))}
-                        className="flex-1 h-12 text-base px-4 border-gray-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 rounded-xl shadow-sm"
-                        disabled={sending[selectedThread]}
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        className="h-12 px-6 rounded-xl text-base font-semibold bg-blue-600 hover:bg-blue-700 transition-colors duration-150"
-                        disabled={sending[selectedThread] || !reply[selectedThread]?.trim()}
-                      >
-                        Reply
-                      </Button>
-                    </form>
-                  );
-                }
-                return null;
-              })()}
+                        const lastMsg = conversation[conversation.length - 1];
+                        if (lastMsg && reply[selectedThread]?.trim()) handleReply(selectedThread, lastMsg.phone);
+                      }
+                    }}
+                  />
+                  {/* Send icon inside input bar */}
+                  <button
+                    type="submit"
+                    disabled={sending[selectedThread] || !reply[selectedThread]?.trim()}
+                    tabIndex={0}
+                    aria-label="Send reply"
+                    className={`absolute right-3 bottom-2 flex items-center justify-center rounded-full transition-all duration-150
+                      ${reply[selectedThread]?.trim() && !sending[selectedThread] ? 'bg-blue-600 hover:bg-blue-700 text-white scale-110 shadow-md' : 'bg-gray-200 text-gray-400 cursor-default'}
+                      h-9 w-9 p-0 m-0 focus:outline-none`}
+                    style={{ pointerEvents: sending[selectedThread] || !reply[selectedThread]?.trim() ? 'none' : 'auto' }}
+                  >
+                    <Send className={`h-5 w-5 transition-transform duration-150 ${reply[selectedThread]?.trim() && !sending[selectedThread] ? 'scale-110' : ''}`} />
+                  </button>
+                </div>
+              </form>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-center text-gray-300 py-8">

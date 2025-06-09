@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { isValidPhone } from "../lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Textarea } from "./ui/textarea";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Loader2 } from "lucide-react";
 
 export type Cleaner = {
   id?: string;
@@ -18,13 +24,13 @@ type Props = {
 };
 
 export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
+  const [open, setOpen] = useState(true);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState("active");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Prefill form fields if editing
   useEffect(() => {
     if (cleaner) {
       setName(cleaner.name || "");
@@ -39,15 +45,10 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
   }, [cleaner]);
 
   function normalizePhone(input: string): string {
-    // Remove all non-digit characters
     const digits = input.replace(/\D/g, "");
-    // If 10 digits, assume US and add +1
     if (digits.length === 10) return `+1${digits}`;
-    // If 11 digits and starts with 1, add +
     if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-    // If already starts with + and 10+ digits, return as is
     if (input.startsWith("+") && digits.length >= 10) return input;
-    // Otherwise, return digits (not E.164 but at least numbers)
     return digits;
   }
 
@@ -55,13 +56,11 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    // Validate required fields
     if (!name.trim() || !phone.trim()) {
       setError("Name and phone are required.");
       setIsLoading(false);
       return;
     }
-    // Accept common US formats, only error if clearly invalid
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 7 || /[a-zA-Z]/.test(phone)) {
       setError("Please enter a valid phone number (at least 7 digits, no letters).");
@@ -71,7 +70,6 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
     const normalizedPhone = normalizePhone(phone);
     try {
       if (cleaner && cleaner.id) {
-        // Edit mode: update cleaner
         const { error: updateError } = await supabase
           .from("cleaners")
           .update({
@@ -82,7 +80,6 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
           .eq("id", cleaner.id);
         if (updateError) throw updateError;
       } else {
-        // Create mode: insert new cleaner (no auth required)
         const { error: insertError } = await supabase
           .from("cleaners")
           .insert([
@@ -95,6 +92,7 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
         if (insertError) throw insertError;
       }
       if (onSave) onSave();
+      setOpen(false);
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to save cleaner.");
@@ -103,20 +101,26 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
     }
   }
 
-  const digits = phone.replace(/\D/g, "");
+  function handleDialogClose() {
+    setOpen(false);
+    onClose();
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 px-1 sm:px-2">
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 w-full max-w-xs sm:max-w-md p-4 sm:p-8 relative mx-auto">
-        <h2 className="text-lg sm:text-xl font-extrabold tracking-tight mb-4 sm:mb-6 text-gray-900">
-          {cleaner ? "Edit Cleaner" : "Add Cleaner"}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
-          <div className="space-y-3">
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="cleaner-name">Full Name<span className="text-red-500">*</span></label>
-              <input
+    <Dialog open={open} onOpenChange={isOpen => { if (!isOpen) handleDialogClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-2xl font-bold text-gray-900">{cleaner ? "Edit Cleaner" : "Add Cleaner"}</DialogTitle>
+          <DialogDescription className="text-base text-gray-600">
+            {cleaner ? "Update the cleaner details below." : "Fill in the details to add a new cleaner."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-6 py-2">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cleaner-name" className="text-base font-semibold text-gray-800">Full Name <span className="text-destructive">*</span></Label>
+              <Input
                 id="cleaner-name"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 required
@@ -124,13 +128,11 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
                 placeholder="Jane Doe"
                 autoComplete="name"
               />
-              {error && !name.trim() && <div className="text-red-500 text-xs mt-1">Name is required.</div>}
             </div>
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="cleaner-phone">Phone<span className="text-red-500">*</span></label>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="cleaner-phone" className="text-base font-semibold text-gray-800">Phone <span className="text-destructive">*</span></Label>
+              <Input
                 id="cleaner-phone"
-                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition placeholder-gray-400 text-base"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 placeholder="(555) 555-5555 or +1 555-555-5555"
@@ -140,10 +142,9 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
                 disabled={isLoading}
                 autoComplete="tel"
               />
-              {error && (digits.length < 7 || /[a-zA-Z]/.test(phone)) && <div className="text-red-500 text-xs mt-1">Please enter a valid phone number.</div>}
             </div>
-            <div>
-              <label className="block font-semibold mb-1 text-gray-700" htmlFor="cleaner-status">Status</label>
+            <div className="space-y-2">
+              <Label htmlFor="cleaner-status" className="text-base font-semibold text-gray-800">Status</Label>
               <select
                 id="cleaner-status"
                 className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
@@ -156,28 +157,38 @@ export default function CleanerFormModal({ cleaner, onClose, onSave }: Props) {
               </select>
             </div>
           </div>
-          {error && !error.includes('Name') && !error.includes('phone') && (
-            <div className="text-red-500 text-xs mt-1">{error}</div>
+          {error && (
+            <Alert variant="destructive" className="py-2">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-          <div className="flex justify-end gap-2 mt-4">
-            <button
+          <DialogFooter className="pt-2">
+            <Button
               type="button"
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 focus:bg-gray-200 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-200"
-              onClick={onClose}
+              variant="outline"
+              onClick={handleDialogClose}
               disabled={isLoading}
+              className="text-base px-5 py-2"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 focus:bg-blue-800 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
               disabled={isLoading || !name.trim() || !phone.trim()}
+              className="bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 text-white text-base font-semibold px-5 py-2 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
             >
-              {isLoading ? "Saving..." : "Save"}
-            </button>
-          </div>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 } 

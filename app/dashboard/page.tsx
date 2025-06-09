@@ -129,14 +129,25 @@ export default function DashboardPage() {
     fetchJobs();
   }
 
+  // Ensure modal closes and editingJob is reset on cancel
+  function handleEditModalClose() {
+    setEditModalOpen(false);
+    setEditingJob(null);
+  }
+
   return (
     <main className="max-w-3xl mx-auto py-10 px-4 sm:px-2 w-full">
       {/* Responsive header: stack vertically on mobile */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4 sm:gap-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Upcoming Jobs</h1>
-          <JobFormModal onJobSaved={fetchJobs} />
-        </div>
+      <div className="flex flex-row items-center gap-4 mb-8">
+        <div className="text-xl sm:text-2xl font-extrabold tracking-tight px-1 sm:px-2 text-gray-900">All Jobs</div>
+        <JobFormModal onJobSaved={fetchJobs}>
+          <button
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow-md hover:bg-blue-700 focus:bg-blue-800 transition focus:outline-none focus:ring-2 focus:ring-blue-200"
+            type="button"
+          >
+            <span className="text-lg font-bold">+</span> Add Job
+          </button>
+        </JobFormModal>
       </div>
       {loading ? (
         <div className="text-center text-gray-400 py-16 text-lg">Loading jobs...</div>
@@ -155,6 +166,7 @@ export default function DashboardPage() {
         <JobFormModal
           job={editingJob}
           onJobSaved={handleJobSaved}
+          onCancel={handleEditModalClose}
         />
       )}
       {/* Delete Confirmation Modal */}

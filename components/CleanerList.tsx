@@ -1,8 +1,10 @@
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
-import { Trash, Pencil } from "lucide-react";
+import { Trash, Pencil, User } from "lucide-react";
 import { Button } from "./ui/button";
 import React, { useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import EntityCard from "./EntityCard";
 
 export type Cleaner = {
   id: string;
@@ -13,13 +15,15 @@ export type Cleaner = {
 };
 
 function StatusBadge({ status }: { status?: string }) {
+  const isActive = status === "active";
   return (
     <span
-      className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-        status === "active" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
+      className={`px-4 py-1 text-sm font-bold rounded-full tracking-wide shadow-sm border-0 ${
+        isActive ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"
       }`}
+      style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}
     >
-      {status === "active" ? "Active" : "Inactive"}
+      {isActive ? "Active" : "Inactive"}
     </span>
   );
 }
@@ -49,52 +53,61 @@ export default function CleanerList({ cleaners, onDeleteCleaner, onEditCleaner }
   }
   return (
     <>
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 pb-8">
         {cleaners.map((cleaner) => (
-          <div
+          <EntityCard
             key={cleaner.id}
-            className="rounded-xl border border-gray-100 bg-white shadow-md hover:shadow-lg p-4 sm:p-6 flex flex-col gap-2 transition group"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-1 gap-1 sm:gap-0">
-              <span className="font-bold text-base sm:text-lg text-gray-900">{cleaner.name}</span>
-              <StatusBadge status={cleaner.status} />
-            </div>
-            <div className="text-sm text-gray-700">{cleaner.phone}</div>
-            <div className="flex gap-2 justify-end mt-2 sm:mt-3">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => onEditCleaner(cleaner)}
-                      className="transition hover:bg-blue-100 rounded-lg border border-blue-200"
-                      aria-label="Edit Cleaner"
-                    >
-                      <Pencil className="w-4 h-4 text-blue-600" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteClick(cleaner)}
-                      className="transition hover:bg-red-100 rounded-lg border border-transparent"
-                      aria-label="Delete Cleaner"
-                    >
-                      <Trash className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          </div>
+            headerIcon={
+              <Avatar>
+                <AvatarFallback className="bg-green-100 text-green-700 font-bold">
+                  <User className="w-5 h-5" />
+                </AvatarFallback>
+              </Avatar>
+            }
+            title={cleaner.name}
+            badges={[<StatusBadge status={cleaner.status} key="status" />]}
+            mainInfo={
+              <div className="text-sm text-gray-700 flex items-center gap-2 mb-1">
+                <span>{cleaner.phone || "No phone"}</span>
+              </div>
+            }
+            actions={
+              <div className="flex gap-2 ml-0 sm:ml-3">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => onEditCleaner(cleaner)}
+                        aria-label={`Edit cleaner ${cleaner.name}`}
+                        className="h-10 w-10 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
+                      >
+                        <Pencil className="h-5 w-5 text-blue-600" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Edit Cleaner</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleDeleteClick(cleaner)}
+                        aria-label={`Delete cleaner ${cleaner.name}`}
+                        className="h-10 w-10 border-red-200 hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+                      >
+                        <Trash className="h-5 w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Delete Cleaner</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            }
+          />
         ))}
       </div>
       <DeleteConfirmationModal

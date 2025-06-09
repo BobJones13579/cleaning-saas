@@ -1,8 +1,10 @@
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
-import { Trash, Pencil } from "lucide-react";
+import { Trash, Pencil, User } from "lucide-react";
 import { Button } from "./ui/button";
 import React, { useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import EntityCard from "./EntityCard";
 
 type Client = {
   id: string;
@@ -41,47 +43,64 @@ export default function ClientList({ clients, onEditClient, onDeleteClient }: { 
   }
   return (
     <>
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 pb-8">
         {clients.map((client) => (
-          <div key={client.id} className="rounded-xl border border-gray-100 bg-white shadow-md hover:shadow-lg p-4 sm:p-6 flex flex-col gap-2 transition group">
-            <div className="font-bold text-base sm:text-lg mb-1 text-gray-900">{client.name}</div>
-            <div className="text-sm text-gray-700 mb-1">{client.phone || "No phone"}</div>
-            <div className="text-xs sm:text-sm text-gray-500">{formatAddress(client)}</div>
-            <div className="flex gap-2 justify-end mt-2 sm:mt-3">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => onEditClient(client)}
-                      className="transition hover:bg-blue-100 rounded-lg border border-blue-200"
-                      aria-label="Edit Client"
-                    >
-                      <Pencil className="w-4 h-4 text-blue-600" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteClick(client)}
-                      className="transition hover:bg-red-100 rounded-lg border border-transparent"
-                      aria-label="Delete Client"
-                    >
-                      <Trash className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          </div>
+          <EntityCard
+            key={client.id}
+            headerIcon={
+              <Avatar>
+                <AvatarFallback className="bg-blue-100 text-blue-700 font-bold">
+                  <User className="w-5 h-5" />
+                </AvatarFallback>
+              </Avatar>
+            }
+            title={client.name}
+            badges={[]}
+            mainInfo={
+              <>
+                <div className="text-sm text-gray-700 flex items-center gap-2 mb-1">
+                  <span>{client.phone || "No phone"}</span>
+                </div>
+                <div className="text-xs sm:text-sm text-gray-500 truncate">{formatAddress(client)}</div>
+              </>
+            }
+            actions={
+              <div className="flex gap-2 ml-0 sm:ml-3">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => onEditClient(client)}
+                        aria-label={`Edit client ${client.name}`}
+                        className="h-10 w-10 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
+                      >
+                        <Pencil className="h-5 w-5 text-blue-600" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Edit Client</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleDeleteClick(client)}
+                        aria-label={`Delete client ${client.name}`}
+                        className="h-10 w-10 border-red-200 hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+                      >
+                        <Trash className="h-5 w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Delete Client</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            }
+          />
         ))}
       </div>
       <DeleteConfirmationModal

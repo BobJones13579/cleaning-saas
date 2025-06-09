@@ -128,7 +128,7 @@ export default function ClientsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Clients</h1>
         <button
-          className="rounded bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
+          className="gap-2 shadow-md bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 text-white text-base font-semibold px-5 py-2 rounded-lg transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
           onClick={handleAddClient}
         >
           + Add Client

@@ -1,13 +1,20 @@
 "use client"
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useJobs } from "../lib/useJobs";
 import { JOB_STATUS_OPTIONS } from "../lib/constants";
 import { supabase } from "../lib/supabase";
-import { Plus } from "lucide-react";
+import { Plus, Calendar, User, Users, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { v4 as uuidv4, validate as validateUUID } from "uuid";
 import { DateTime } from "luxon";
 import { convertUTCToLocal, BUSINESS_TIMEZONE } from "../lib/utils";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export type JobFormModalJob = {
   id: string;
@@ -18,14 +25,20 @@ export type JobFormModalJob = {
   status: string;
 };
 
+interface JobFormModalProps {
+  onJobSaved?: () => void;
+  job?: JobFormModalJob;
+  onCancel?: () => void;
+  children?: ReactNode;
+}
+
 export default function JobFormModal({
   onJobSaved,
   job,
-}: {
-  onJobSaved?: () => void;
-  job?: JobFormModalJob;
-}) {
-  const [open, setOpen] = useState(!!job);
+  onCancel,
+  children,
+}: JobFormModalProps) {
+  const [open, setOpen] = useState(false);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [cleaners, setCleaners] = useState<{ id: string; name: string }[]>([]);
   const [clientId, setClientId] = useState("");
@@ -39,6 +52,11 @@ export default function JobFormModal({
   const { fetchClients, fetchCleaners, saveJob } = useJobs();
   const [clientsLoading, setClientsLoading] = useState(true);
   const [cleanersLoading, setCleanersLoading] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<{
+    client?: string;
+    cleaner?: string;
+    datetime?: string;
+  }>({});
 
   // Prefill form fields if editing
   useEffect(() => {
@@ -46,18 +64,12 @@ export default function JobFormModal({
       setOpen(true);
       setClientId(job.client_id);
       setCleanerId(job.cleaner_id);
-      // Convert UTC from DB to local (business time zone) for input
       setDatetime(convertUTCToLocal(job.scheduled_start));
       setNotes(job.notes || "");
       setStatus(job.status || JOB_STATUS_OPTIONS[0]);
-    } else {
-      setOpen(false);
-      setClientId("");
-      setCleanerId("");
-      setDatetime("");
-      setNotes("");
-      setStatus(JOB_STATUS_OPTIONS[0]);
     }
+    // Do not auto-open for create mode; open is controlled by Add Job button
+    // Do not reset form here for create mode; handled by Add Job button
   }, [job]);
 
   // Fetch clients and cleaners on open
@@ -113,17 +125,47 @@ export default function JobFormModal({
   const nowEastern = DateTime.now().setZone(BUSINESS_TIMEZONE);
   const isPast = datetime && DateTime.fromISO(datetime, { zone: BUSINESS_TIMEZONE }) < nowEastern;
 
+  const resetForm = () => {
+    setClientId("");
+    setCleanerId("");
+    setDatetime("");
+    setNotes("");
+    setStatus(JOB_STATUS_OPTIONS[0]);
+    setError(null);
+    setFieldErrors({});
+  };
+
+  const validateForm = () => {
+    const errors: {
+      client?: string;
+      cleaner?: string;
+      datetime?: string;
+    } = {};
+    
+    if (!clientId) {
+      errors.client = "Client is required";
+    } else if (!validateUUID(clientId)) {
+      errors.client = "Invalid client selection";
+    }
+    
+    if (!cleanerId) {
+      errors.cleaner = "Cleaner is required";
+    } else if (!validateUUID(cleanerId)) {
+      errors.cleaner = "Invalid cleaner selection";
+    }
+    
+    if (!datetime) {
+      errors.datetime = "Date and time are required";
+    }
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!clientId || !cleanerId || !datetime) {
-      setError("Please fill all required fields.");
-      toast({ title: "Missing fields", description: "Please fill all required fields.", variant: "destructive" });
-      return;
-    }
-    // Validate UUIDs
-    if (!validateUUID(clientId) || !validateUUID(cleanerId)) {
-      setError("Invalid client or cleaner selection.");
-      toast({ title: "Invalid selection", description: "Please select a valid client and cleaner.", variant: "destructive" });
+    if (!validateForm()) {
+      setError(null);
       return;
     }
     setLoading(true);
@@ -201,141 +243,205 @@ export default function JobFormModal({
 
   function handleClose() {
     setOpen(false);
-    setTimeout(() => {
-      setError(null);
-      setClientId("");
-      setCleanerId("");
-      setDatetime("");
-      setNotes("");
-      setStatus(JOB_STATUS_OPTIONS[0]);
-    }, 300);
+    resetForm();
+    if (onCancel) onCancel();
   }
 
   return (
     <>
-      {/* Add Job Button (only when not editing) */}
       {!job && !open && (
-        <button
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow-md hover:bg-blue-700 focus:bg-blue-800 transition focus:outline-none focus:ring-2 focus:ring-blue-200"
-          onClick={() => setOpen(true)}
-          aria-label="Add Job"
-          type="button"
-        >
-          <Plus className="w-5 h-5" />
-          <span className="hidden sm:inline">Add Job</span>
-        </button>
+        children ? (
+          <span onClick={() => { resetForm(); setOpen(true); }} style={{ display: 'inline-block', cursor: 'pointer' }}>{children}</span>
+        ) : (
+          <Button
+            onClick={() => {
+              resetForm();
+              setOpen(true);
+            }}
+            className="gap-2 shadow-md"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Add Job</span>
+          </Button>
+        )
       )}
-      {(open || job) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 px-1 sm:px-2">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 sm:p-8 w-full max-w-xs sm:max-w-md mx-auto">
-            <h2 className="text-lg sm:text-xl font-extrabold tracking-tight mb-4 sm:mb-6 text-gray-900">{job ? "Edit Job" : "Create New Job"}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
-              <div className="space-y-3">
-                <div>
-                  <label className="block font-semibold mb-1 text-gray-700" htmlFor="job-client">Client<span className="text-red-500">*</span></label>
-                  <select
-                    id="job-client"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
-                    value={clientId}
-                    onChange={e => setClientId(e.target.value)}
-                    required
-                    disabled={loading || clientsLoading}
-                  >
-                    <option value="">Select client</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  {error && !clientId && <div className="text-red-500 text-xs mt-1">Client is required.</div>}
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-gray-700" htmlFor="job-cleaner">Cleaner<span className="text-red-500">*</span></label>
-                  <select
-                    id="job-cleaner"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
-                    value={cleanerId}
-                    onChange={e => setCleanerId(e.target.value)}
-                    required
-                    disabled={loading || cleanersLoading}
-                  >
-                    <option value="">Select cleaner</option>
-                    {cleaners.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                        {/* Optionally, add (Booked) if c.id is in bookedCleanerIds */}
-                        {bookedCleanerIds.includes(c.id) ? ' (Booked)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {error && !cleanerId && <div className="text-red-500 text-xs mt-1">Cleaner is required.</div>}
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-gray-700" htmlFor="job-datetime">Date & Time<span className="text-red-500">*</span></label>
-                  <input
+      
+      <Dialog open={open} onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (!isOpen) {
+          resetForm();
+          if (onCancel) onCancel();
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-gray-900">{job ? "Edit Job" : "Create New Job"}</DialogTitle>
+            <DialogDescription className="text-base text-gray-600">
+              {job ? "Update the job details below." : "Fill in the details to create a new job."}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleSubmit} className="space-y-6 py-2">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="job-client" className="flex items-center gap-1 text-base font-semibold text-gray-800">
+                  <Users className="h-4 w-4" />
+                  Client <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  disabled={loading || clientsLoading}
+                  value={clientId}
+                  onValueChange={setClientId}
+                >
+                  <SelectTrigger id="job-client" className={fieldErrors.client ? "border-destructive ring-destructive/10" : ""}>
+                    <SelectValue placeholder="Select client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clientsLoading ? (
+                      <div className="flex items-center justify-center p-2">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span>Loading clients...</span>
+                      </div>
+                    ) : (
+                      clients.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {fieldErrors.client && (
+                  <p className="text-xs text-destructive">{fieldErrors.client}</p>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="job-cleaner" className="flex items-center gap-1 text-base font-semibold text-gray-800">
+                  <User className="h-4 w-4" />
+                  Cleaner <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  disabled={loading || cleanersLoading}
+                  value={cleanerId}
+                  onValueChange={setCleanerId}
+                >
+                  <SelectTrigger id="job-cleaner" className={fieldErrors.cleaner ? "border-destructive ring-destructive/10" : ""}>
+                    <SelectValue placeholder="Select cleaner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cleanersLoading ? (
+                      <div className="flex items-center justify-center p-2">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span>Loading cleaners...</span>
+                      </div>
+                    ) : (
+                      cleaners.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                          {bookedCleanerIds.includes(c.id) && " (Booked)"}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {fieldErrors.cleaner && (
+                  <p className="text-xs text-destructive">{fieldErrors.cleaner}</p>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="job-datetime" className="flex items-center gap-1 text-base font-semibold text-gray-800">
+                  <Calendar className="h-4 w-4" />
+                  Date & Time <span className="text-destructive">*</span>
+                </Label>
+                <div className="relative">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
                     id="job-datetime"
                     type="datetime-local"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
+                    className={`pl-9 ${fieldErrors.datetime ? "border-destructive ring-destructive/10" : ""}`}
                     value={datetime}
                     onChange={e => setDatetime(e.target.value)}
-                    required
                     disabled={loading}
                   />
-                  {isPast && (
-                    <div className="text-yellow-600 text-xs mt-1 flex items-center gap-1">
-                      <span role="img" aria-label="Warning">⚠️</span>
-                      This job is scheduled in the past. Reminders will not be sent automatically.
-                    </div>
-                  )}
-                  {error && !datetime && <div className="text-red-500 text-xs mt-1">Date & Time is required.</div>}
                 </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-gray-700" htmlFor="job-status">Status</label>
-                  <select
-                    id="job-status"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
-                    value={status}
-                    onChange={e => setStatus(e.target.value)}
-                    required
-                    disabled={loading}
-                  >
-                    {JOB_STATUS_OPTIONS.map((option: string) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-gray-700" htmlFor="job-notes">Notes (optional)</label>
-                  <textarea
-                    id="job-notes"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 shadow-sm transition text-base"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    rows={2}
-                    disabled={loading}
-                    placeholder="Any special instructions or notes..."
-                  />
-                </div>
+                {isPast && (
+                  <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mt-2 text-yellow-800 text-sm" style={{marginTop: 0}}>
+                    <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+                    <span>This job is scheduled in the past. Reminders will not be sent automatically.</span>
+                  </div>
+                )}
+                {fieldErrors.datetime && (
+                  <p className="text-xs text-destructive">{fieldErrors.datetime}</p>
+                )}
               </div>
-              {error && !error.includes('required') && (
-                <div className="text-red-500 text-xs mt-1">{error}</div>
-              )}
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 focus:bg-gray-200 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  onClick={handleClose}
+              
+              <div className="space-y-2">
+                <Label htmlFor="job-status" className="text-base font-semibold text-gray-800">Status</Label>
+                <Select
                   disabled={loading}
+                  value={status}
+                  onValueChange={setStatus}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 focus:bg-blue-800 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  disabled={loading || clientsLoading || cleanersLoading || !clientId || !cleanerId || !datetime}
-                >
-                  {loading ? "Saving..." : "Save"}
-                </button>
+                  <SelectTrigger id="job-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JOB_STATUS_OPTIONS.map((option: string) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="job-notes" className="text-base font-semibold text-gray-800">Notes (optional)</Label>
+                <Textarea
+                  id="job-notes"
+                  placeholder="Any special instructions or notes..."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  disabled={loading}
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+            </div>
+            
+            {error && (
+              <Alert variant="destructive" className="py-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={loading}
+                className="text-base px-5 py-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading || clientsLoading || cleanersLoading}
+                className="bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 text-white text-base font-semibold px-5 py-2 shadow-md transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 } 
